@@ -53,7 +53,7 @@ namespace LCMyMango
 {
 	[BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
 	[BepInDependency("BMX.LobbyCompatibility", BepInDependency.DependencyFlags.HardDependency)]
-	[BepInDependency("LethalNetworkAPI")]
+	[BepInDependency("LethalNetworkAPI", BepInDependency.DependencyFlags.HardDependency)]
 	[LobbyCompatibility(CompatibilityLevel.ClientOptional, VersionStrictness.None)]
 	public class LCMyMango : BaseUnityPlugin
 	{
