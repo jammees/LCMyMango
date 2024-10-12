@@ -55,35 +55,121 @@ namespace LCMyMango.Patches
 	[HarmonyPatch(typeof(PlayerControllerB))]
 	public class PlayerControllerBPatch
 	{
-		static float _voiceAmplitudeThreshold = 0.2f;
-		static float _timeUntilExplode = 0.5f;
-		static float _explodeCooldownSeconds = 2f;
+		//static float _voiceAmplitudeThreshold = 0.2f;
+		//static float _timeUntilExplode = 0.5f;
+		//static float _explodeCooldownSeconds = 2f;
 
 		static bool _explodeCooldown = false;
 		static float _timeSinceScreaming = 0f;
 
-		static LNetworkMessage<ulong>? _clientMessage;
+		static LNetworkMessage<ulong>? _explosionMessage;
+		static LNetworkMessage<MangoConfigPacket>? _syncConfigMessage;
 
 		[HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.Awake))]
 		[HarmonyPostfix]
-		static void OnNetworkSpawn()
+		static void OnClientJoined()
 		{
-			_clientMessage = LNetworkMessage<ulong>.Create("ExplodeRequest", onServerReceived: OnReceivedExplosionRequest);
+			_explosionMessage = LNetworkMessage<ulong>.Create("ExplodeRequest", onServerReceived: OnReceivedExplosionRequest);
 			LCMyMango.Logger.LogInfo("Created client/server connection.");
+
+			_syncConfigMessage = LNetworkMessage<MangoConfigPacket>.Create("SyncConfig", onServerReceived: OnServerConfigRequest, onClientReceived: OnClientConfigReceived);
+			LCMyMango.Logger.LogInfo("Created config sync connection.");
 		}
 
-		[HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.OnLocalDisconnect))]
+		[HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.ConnectClientToPlayerObject))]
 		[HarmonyPostfix]
-		static void OnNetworkDespawn()
+		static void OnPlayerReady()
 		{
-			_clientMessage?.ClearSubscriptions();
-			_clientMessage = null;
+			if (!NetworkManager.Singleton.IsHost)
+			{
+				_syncConfigMessage?.SendServer(new MangoConfigPacket() { Type = MangoConfigPacket.PacketType.Request });
+			}
+			else
+			{
+				SetHostConfigToLocal();
+			}
+		}
+
+		[HarmonyPatch(typeof(GameNetworkManager), nameof(GameNetworkManager.StartDisconnect))]
+		[HarmonyPostfix]
+		static void OnClientStartDisconnecting()
+		{
+			// destroy explosion message
+			_explosionMessage?.ClearSubscriptions();
+			_explosionMessage = null;
+
+			// destroy sync message
+			_syncConfigMessage?.ClearSubscriptions();
+			_syncConfigMessage = null;
+
+			// destroy host config
+			LCMyMango.HostConfig = null!;
+			
 			LCMyMango.Logger.LogInfo("Destroyed client/server connection.");
+		}
+
+		static void OnClientConfigReceived(MangoConfigPacket packet)
+		{
+			if (NetworkManager.Singleton.IsHost) return;
+
+			if (packet.Type != MangoConfigPacket.PacketType.Receive) return;
+
+			// unsubscribe
+			_syncConfigMessage?.ClearSubscriptions();
+			_syncConfigMessage = null;
+
+			MangoConfigPrimitive config = packet.Config!;
+            if (config is null)
+            {
+				LCMyMango.Logger.LogError("Failed to fetch/deserialize host config! Using client values!");
+
+				SetHostConfigToLocal();
+
+				return;
+            }
+
+			LCMyMango.Logger.LogDebug($"CLIENT {config.TimeUntilExplode}, {config.ExplodeCooldown}");
+
+			LCMyMango.HostConfig = config;
+			LCMyMango.Logger.LogInfo("Successfuly fetched host config!");
+
+			StartOfRound.Instance.localPlayerController.StartCoroutine(DisplaySyncNotice());
+		}
+
+		static IEnumerator DisplaySyncNotice()
+		{
+			yield return new WaitForSeconds(1.5f);
+			HUDManager.Instance.DisplayTip(
+				"LCMyMango",
+				$"Successfully synced with host's config!\nTimeUntilExplode: {LCMyMango.HostConfig.TimeUntilExplode} seconds\nExplodeCooldown: {LCMyMango.HostConfig.ExplodeCooldown} seconds"
+			);
+		}
+
+		static void OnServerConfigRequest(MangoConfigPacket packet, ulong id)
+		{
+			LCMyMango.Logger.LogInfo($"playerId: {id} requested a host config sync");
+
+			if (packet.Type != MangoConfigPacket.PacketType.Request) return;
+
+			LCMyMango.Logger.LogDebug($"SERVER {LCMyMango.MangoConfig.TimeUntilExplode}, {LCMyMango.MangoConfig.ExplodeCooldown}");
+
+			MangoConfigPrimitive mangoConfig = new()
+			{
+				TimeUntilExplode = LCMyMango.MangoConfig.TimeUntilExplode,
+				ExplodeCooldown = LCMyMango.MangoConfig.ExplodeCooldown,
+			};
+
+			_syncConfigMessage?.SendClient(
+				new MangoConfigPacket() { Config = mangoConfig, Type = MangoConfigPacket.PacketType.Receive },
+				id
+			);
 		}
 
 		static void OnReceivedExplosionRequest(ulong _, ulong clientID)
 		{
+			#pragma warning disable Harmony003 // Harmony non-ref patch parameters modified
 			PlayerControllerB? senderController = clientID.GetPlayerController();
+			#pragma warning restore Harmony003 // Harmony non-ref patch parameters modified
 			if (senderController is null || senderController.isPlayerDead) return;
 			if (!senderController.IsHost)
 			{
@@ -107,8 +193,7 @@ namespace LCMyMango.Patches
 
 			Vector3 playerPos = senderController.gameObject.transform.position - new Vector3(0, 0.25f, 0);
 
-			// problem here
-			GameObject landmineObject = Object.Instantiate(landmine.prefabToSpawn, playerPos, Quaternion.identity);
+			GameObject landmineObject = UnityEngine.Object.Instantiate(landmine.prefabToSpawn, playerPos, Quaternion.identity);
 
 			Landmine landmineComponent = landmineObject.GetComponentInChildren<Landmine>();
 			landmineObject.GetComponent<NetworkObject>().Spawn(true);
@@ -139,10 +224,11 @@ namespace LCMyMango.Patches
 				if (isPressingButton is not null && !(bool)isPressingButton)
 				{
 					isSpeaking = false;
-				}
+				} 
 			}
 
-			if (!isSpeaking || startOfRound.averageVoiceAmplitude < _voiceAmplitudeThreshold)
+			//if (!isSpeaking || startOfRound.averageVoiceAmplitude < _voiceAmplitudeThreshold)
+			if (!isSpeaking || startOfRound.averageVoiceAmplitude < LCMyMango.MangoConfig.VoiceThreshold)
 			{
 				_timeSinceScreaming = 0f;
 				return;
@@ -150,7 +236,7 @@ namespace LCMyMango.Patches
 
 			_timeSinceScreaming += Time.deltaTime;
 
-			if (!(_timeSinceScreaming >= _timeUntilExplode)) return;
+			if (!(_timeSinceScreaming >= LCMyMango.HostConfig.TimeUntilExplode)) return;
 
 			_timeSinceScreaming = 0f;
 			_explodeCooldown = true;
@@ -160,14 +246,24 @@ namespace LCMyMango.Patches
 
 			LCMyMango.Logger.LogInfo("Send server rpc");
 
-			_clientMessage?.SendServer(__instance.actualClientId);
+			_explosionMessage?.SendServer(__instance.actualClientId);
 		}
 
 		static IEnumerator ExplosionCooldownCoroutine()
 		{
-			yield return new WaitForSeconds(_explodeCooldownSeconds);
+			yield return new WaitForSeconds(LCMyMango.HostConfig.ExplodeCooldown);
 			_explodeCooldown = false;
 			LCMyMango.Logger.LogInfo("Waited");
+		}
+
+		static void SetHostConfigToLocal()
+		{
+			MangoConfigPrimitive defaultConfig = new()
+			{
+				TimeUntilExplode = LCMyMango.MangoConfig.TimeUntilExplode,
+				ExplodeCooldown = LCMyMango.MangoConfig.ExplodeCooldown,
+			};
+			LCMyMango.HostConfig = defaultConfig;
 		}
 	}
 }
