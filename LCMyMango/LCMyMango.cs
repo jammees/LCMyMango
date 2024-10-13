@@ -1,10 +1,9 @@
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
-using LobbyCompatibility.Attributes;
-using LobbyCompatibility.Enums;
-using System.Reflection;
-using UnityEngine;
+using System;
+using System.Runtime.CompilerServices;
+using UnityEngine.UIElements;
 
 /*
  * LCMyMango - jammees
@@ -51,10 +50,9 @@ using UnityEngine;
 
 namespace LCMyMango
 {
-    [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
-	[BepInDependency("BMX.LobbyCompatibility", BepInDependency.DependencyFlags.HardDependency)]
+	[BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
+	[BepInDependency("BMX.LobbyCompatibility", BepInDependency.DependencyFlags.SoftDependency)]
 	[BepInDependency("LethalNetworkAPI", BepInDependency.DependencyFlags.HardDependency)]
-	[LobbyCompatibility(CompatibilityLevel.ClientOptional, VersionStrictness.None)]
 	public class LCMyMango : BaseUnityPlugin
 	{
 		public static LCMyMango Instance { get; private set; } = null!;
@@ -71,8 +69,9 @@ namespace LCMyMango
 
 			MangoConfig = new MangoConfig(Config);
 
-			NetcodePatcher();
 			Patch();
+			
+			if( RegisterLobbyCompatibility.HasLobbyCompatibility ) RegisterLobbyCompatibility.RegisterSelf();
 
 			Logger.LogInfo($"{MyPluginInfo.PLUGIN_GUID} v{MyPluginInfo.PLUGIN_VERSION} has loaded!");
 		}
@@ -87,22 +86,21 @@ namespace LCMyMango
 
 			Logger.LogDebug("Finished patching!");
 		}
+	}
 
-		private void NetcodePatcher()
+	static class RegisterLobbyCompatibility
+	{
+		public static bool HasLobbyCompatibility => BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("BMX.LobbyCompatibility");
+
+		public static void RegisterSelf()
 		{
-			var types = Assembly.GetExecutingAssembly().GetTypes();
-			foreach (var type in types)
-			{
-				var methods = type.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-				foreach (var method in methods)
-				{
-					var attributes = method.GetCustomAttributes(typeof(RuntimeInitializeOnLoadMethodAttribute), false);
-					if (attributes.Length > 0)
-					{
-						method.Invoke(null, null);
-					}
-				}
-			}
+			LobbyCompatibility.Features.PluginHelper.RegisterPlugin(
+				MyPluginInfo.PLUGIN_GUID,
+				new Version(MyPluginInfo.PLUGIN_VERSION),
+				LobbyCompatibility.Enums.CompatibilityLevel.ClientOptional,
+				LobbyCompatibility.Enums.VersionStrictness.Minor
+			);
+			LCMyMango.Logger.LogDebug("Registered mod for LobbyCompatibility");
 		}
 	}
 }
