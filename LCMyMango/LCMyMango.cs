@@ -74,12 +74,12 @@ namespace LCMyMango
 			NetcodePatcher();
 			Patch();
 
-			Logger.LogInfo($"{PluginInfo.PLUGIN_GUID} v{PluginInfo.PLUGIN_VERSION} has loaded!");
+			Logger.LogInfo($"{MyPluginInfo.PLUGIN_GUID} v{MyPluginInfo.PLUGIN_VERSION} has loaded!");
 		}
 
 		internal static void Patch()
 		{
-			Harmony ??= new Harmony(PluginInfo.PLUGIN_GUID);
+			Harmony ??= new Harmony(MyPluginInfo.PLUGIN_GUID);
 
 			Logger.LogDebug("Patching...");
 
