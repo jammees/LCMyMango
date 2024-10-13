@@ -2,8 +2,6 @@ using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
 using System;
-using System.Runtime.CompilerServices;
-using UnityEngine.UIElements;
 
 /*
  * LCMyMango - jammees
