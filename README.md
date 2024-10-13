@@ -1,3 +1,7 @@
+<div align="center">
+<img src="./assets/logo.png"/>
+</div>
+
 # LCMyMango
 
 Simple mod that if you scream you get blown up.
