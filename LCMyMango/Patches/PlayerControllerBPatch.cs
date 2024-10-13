@@ -69,17 +69,26 @@ namespace LCMyMango.Patches
 		[HarmonyPostfix]
 		static void OnClientJoined()
 		{
-			_explosionMessage = LNetworkMessage<ulong>.Create("ExplodeRequest", onServerReceived: OnReceivedExplosionRequest);
+			_explosionMessage ??= LNetworkMessage<ulong>.Create("ExplodeRequest");
 			LCMyMango.Logger.LogInfo("Created client/server connection.");
 
-			_syncConfigMessage = LNetworkMessage<MangoConfigPacket>.Create("SyncConfig", onServerReceived: OnServerConfigRequest, onClientReceived: OnClientConfigReceived);
+			_syncConfigMessage ??= LNetworkMessage<MangoConfigPacket>.Create("SyncConfig");
 			LCMyMango.Logger.LogInfo("Created config sync connection.");
+		}
+
+		static void SetupConnections()
+		{
+			_explosionMessage!.OnServerReceived += OnServerExplosionRequest;
+			_syncConfigMessage!.OnClientReceived += OnClientConfigReceived;
+			_syncConfigMessage!.OnServerReceived += OnServerConfigRequest;
 		}
 
 		[HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.ConnectClientToPlayerObject))]
 		[HarmonyPostfix]
 		static void OnPlayerReady()
 		{
+			SetupConnections();
+
 			if (!NetworkManager.Singleton.IsHost)
 			{
 				_syncConfigMessage?.SendServer(new MangoConfigPacket() { Type = MangoConfigPacket.PacketType.Request });
@@ -96,11 +105,11 @@ namespace LCMyMango.Patches
 		{
 			// destroy explosion message
 			_explosionMessage?.ClearSubscriptions();
-			_explosionMessage = null;
+			//_explosionMessage = null;
 
 			// destroy sync message
 			_syncConfigMessage?.ClearSubscriptions();
-			_syncConfigMessage = null;
+			//_syncConfigMessage = null;
 
 			// destroy host config
 			LCMyMango.HostConfig = null!;
@@ -116,7 +125,7 @@ namespace LCMyMango.Patches
 
 			// unsubscribe
 			_syncConfigMessage?.ClearSubscriptions();
-			_syncConfigMessage = null;
+			//_syncConfigMessage = null;
 
 			MangoConfigPrimitive config = packet.Config!;
             if (config is null)
@@ -165,7 +174,7 @@ namespace LCMyMango.Patches
 			);
 		}
 
-		static void OnReceivedExplosionRequest(ulong _, ulong clientID)
+		static void OnServerExplosionRequest(ulong _, ulong clientID)
 		{
 			#pragma warning disable Harmony003 // Harmony non-ref patch parameters modified
 			PlayerControllerB? senderController = clientID.GetPlayerController();
